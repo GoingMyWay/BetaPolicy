@@ -9,25 +9,30 @@ import sklearn.preprocessing
 from sklearn.kernel_approximation import RBFSampler
 
 
-def rbf_featurizer(env, sample_len=1000):
-    examples = np.array([env.observation_space.sample() for _ in range(sample_len)])
-    scaler = sklearn.preprocessing.StandardScaler()
-    scaler.fit(examples)
+class RBF:
+    def __init__(self, env, sample_len=5000):
+        self.sample_len = sample_len
+        self.featurizer = None
+        self.scaler = None
+        self._rbf_featurizer(env)
 
-    featurizer = sklearn.pipeline.FeatureUnion([
-        ("rbf1", RBFSampler(gamma=5.0, n_components=100)),
-        ("rbf2", RBFSampler(gamma=2.0, n_components=100)),
-        ("rbf3", RBFSampler(gamma=1.0, n_components=100)),
-        ("rbf4", RBFSampler(gamma=0.5, n_components=100))
-    ])
-    featurizer.fit(scaler.transform(examples))
-    return featurizer, scaler
+    def _rbf_featurizer(self, env):
+        examples = np.array([env.observation_space.sample() for _ in range(self.sample_len)])
+        self.scaler = sklearn.preprocessing.StandardScaler()
+        self.scaler.fit(examples)
 
+        self.featurizer = sklearn.pipeline.FeatureUnion([
+            ("rbf1", RBFSampler(gamma=5.0, n_components=100)),
+            ("rbf2", RBFSampler(gamma=2.0, n_components=100)),
+            ("rbf3", RBFSampler(gamma=1.0, n_components=100)),
+            ("rbf4", RBFSampler(gamma=0.5, n_components=100))
+        ])
+        self.featurizer.fit(self.scaler.transform(examples))
 
-def get_feature(featurizer, scaler, state):
-    scaled = scaler.transform([state])
-    output_state = featurizer.transform(scaled)
-    return output_state[0]
+    def get_feature(self, state):
+        scaled = self.scaler.transform([state])
+        output_state = self.featurizer.transform(scaled)
+        return output_state[0]
 
 
 class Actor:
@@ -36,7 +41,6 @@ class Actor:
             self.state = tf.placeholder(tf.float32, [400], "state")
             self.target = tf.placeholder(dtype=tf.float32, name="target")
 
-            # This is just linear classifier
             self.alpha = tf.layers.dense(inputs=tf.expand_dims(self.state, 0),
                                          units=1,
                                          kernel_initializer=tf.zeros_initializer)
@@ -102,7 +106,7 @@ class Critic:
 
 def run_model(sess, env, actor, critic, num_episodes, discount_factor=1.0, play=False):
 
-    featurizer, scaler = rbf_featurizer(env, sample_len=1000)
+    rbf = RBF(env, sample_len=1000)
 
     Transition = collections.namedtuple("Transition",
                                         ["state", "action", "reward", "next_state", "done"])
@@ -118,7 +122,7 @@ def run_model(sess, env, actor, critic, num_episodes, discount_factor=1.0, play=
         for t in itertools.count():
             env.render()
 
-            action = actor.predict(get_feature(featurizer, scaler, state), sess)
+            action = actor.predict(rbf.get_feature(state), sess)
             next_state, reward, done, _ = env.step(action)
 
             episode.append(Transition(
@@ -127,12 +131,12 @@ def run_model(sess, env, actor, critic, num_episodes, discount_factor=1.0, play=
             reward_counter += reward
 
             if not play:
-                value_next = critic.predict(get_feature(featurizer, scaler, next_state), sess)
+                value_next = critic.predict(rbf.get_feature(next_state), sess)
                 td_target = reward + discount_factor * value_next
-                td_error = td_target - critic.predict(get_feature(featurizer, scaler, state), sess)
+                td_error = td_target - critic.predict(rbf.get_feature(state), sess)
 
-                critic.update(get_feature(featurizer, scaler, state), td_target, sess)
-                actor.update(get_feature(featurizer, scaler, state), td_error, sess)
+                critic.update(rbf.get_feature(state), td_target, sess)
+                actor.update(rbf.get_feature(state), td_error, sess)
 
             print("\rStep {}, Episode {}/{} ({}), {}, {}".format(
                 t, i_episode + 1, num_episodes,
@@ -142,5 +146,7 @@ def run_model(sess, env, actor, critic, num_episodes, discount_factor=1.0, play=
                 break
 
             state = next_state
+
+        episode_rewards[i_episode] = reward_counter
 
     return episode_rewards

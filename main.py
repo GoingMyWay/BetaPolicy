@@ -16,10 +16,10 @@ def main(args):
 
     actor = beta.Actor(learning_rate=0.001)
     critic = beta.Critic(learning_rate=0.1)
-    sess.run(tf.initialize_all_variables())
+    sess.run(tf.global_variables_initializer())
 
     episode_rewards = beta.run_model(sess, env, actor, critic, 100, discount_factor=0.995)
-    plt.plot(len(episode_rewards), episode_rewards)
+    plt.plot(list(range(len(episode_rewards))), episode_rewards)
     plt.show()
 
 
