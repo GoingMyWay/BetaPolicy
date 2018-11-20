@@ -12,7 +12,9 @@ def main(args):
 
     global_step = tf.Variable(0, name="global_step", trainable=False)
 
-    sess = tf.Session()
+    tf_config = tf.ConfigProto()
+    tf_config.gpu_options.allow_growth = True
+    sess = tf.Session(config=tf_config)
 
     actor = beta.Actor(learning_rate=0.001)
     critic = beta.Critic(learning_rate=0.1)
